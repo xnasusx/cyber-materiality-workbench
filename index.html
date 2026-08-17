@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cyber Materiality Workbench — SEC Item 1.05 Determination</title>
+  <meta name="description" content="Work a cybersecurity incident through a defensible SEC Item 1.05 materiality determination: quantitative thresholds, the qualitative total mix, and the four-business-day disclosure clock. Built by RootCaws LLC." />
+  <meta name="author" content="RootCaws LLC" />
+  <meta name="robots" content="noindex, follow" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Cyber Materiality Workbench" />
+  <meta property="og:description" content="Turn a cyber incident into a materiality determination a board and an auditor can both read. Quantitative thresholds, qualitative factors, and the 8-K clock." />
+  <meta property="og:site_name" content="RootCaws LLC" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,600;1,9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* Palette lifted from the RootCaws design system */
+    :root{
+      color-scheme:light;
+      --paper:#f7ebed;
+      --paper-2:#f0dee0;
+      --panel:#ffffff;
+      --ink:#3a3336;
+      --ink-2:#4d4548;
+      --muted:#7a7073;
+      --line:#d8c9cc;
+      --accent:#8d5860;
+      --accent-2:#c7848d;
+      --accent-soft:#f4dcdf;
+      --amber:#9a6a24;
+      --amber-soft:#f7e9d4;
+      --sage:#4c7359;
+      --sage-soft:#e2eee6;
+    }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{
+      background:var(--paper);
+      color:var(--ink);
+      font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      -webkit-font-smoothing:antialiased;
+      text-rendering:optimizeLegibility;
+      min-width:320px;
+    }
+    ::selection{background:var(--accent-soft);color:var(--ink)}
+    a{color:var(--accent)}
+    a:hover{opacity:0.82}
+    a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+      outline:2px solid var(--accent);outline-offset:3px;border-radius:4px;
+    }
+    input[type=range]{
+      -webkit-appearance:none;appearance:none;width:100%;height:6px;
+      background:var(--paper-2);border:1px solid var(--line);border-radius:999px;
+      outline:none;cursor:pointer;
+    }
+    input[type=range]::-webkit-slider-thumb{
+      -webkit-appearance:none;width:20px;height:20px;background:var(--accent);
+      border-radius:50%;cursor:pointer;border:3px solid var(--panel);
+      box-shadow:0 2px 8px rgba(141,88,96,0.35);
+    }
+    input[type=range]::-moz-range-thumb{
+      width:20px;height:20px;background:var(--accent);border-radius:50%;
+      cursor:pointer;border:3px solid var(--panel);
+    }
+    input[type=text],input[type=date],input[type=number],select,textarea{
+      font-family:'Inter',sans-serif;font-size:14px;color:var(--ink);
+      background:var(--panel);border:1px solid var(--line);border-radius:8px;
+      padding:8px 10px;width:100%;
+    }
+    textarea{resize:vertical}
+    @media print{
+      body{background:#fff}
+      .no-print{display:none !important}
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script>
+  'use strict';
+  const {useState,useMemo,useCallback,useEffect,createElement:h}=React;
+
+  const C={
+    bg:"#f7ebed",bgCard:"#ffffff",bgBand:"#f0dee0",
+    border:"#d8c9cc",borderSoft:"rgba(58,51,54,0.08)",
+    text:"#3a3336",textMuted:"#4d4548",textDim:"#7a7073",
+    accent:"#8d5860",accent2:"#c7848d",accentSoft:"#f4dcdf",
+    amber:"#9a6a24",amberSoft:"#f7e9d4",
+    sage:"#4c7359",sageSoft:"#e2eee6",
+    shadow:"0 14px 36px rgba(58,51,54,0.13)"
+  };
+  const ui="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+  const display="'Fraunces', Georgia, serif";
+
+  function useIsMobile(bp){const[m,setM]=useState(false);useEffect(()=>{const c=()=>setM(window.innerWidth<(bp||820));c();window.addEventListener("resize",c);return()=>window.removeEventListener("resize",c);},[bp]);return m;}
+
+  /* ---------------------------------------------------------------------------
+     Money parsing and formatting. Analysts type "1.2M", not "1200000".
+  --------------------------------------------------------------------------- */
+  function parseMoney(raw){
+    if(raw==null)return 0;
+    const s=String(raw).trim().replace(/[$,\s]/g,"");
+    if(!s)return 0;
+    const m=s.match(/^(-?\d*\.?\d+)([kKmMbB])?$/);
+    if(!m)return 0;
+    const mult={k:1e3,m:1e6,b:1e9}[(m[2]||"").toLowerCase()]||1;
+    return parseFloat(m[1])*mult;
+  }
+  function fmtMoney(v){
+    if(!isFinite(v))return "$0";
+    const a=Math.abs(v),sign=v<0?"-":"";
+    if(a>=1e9)return sign+"$"+(a/1e9).toFixed(a/1e9>=10?0:1)+"B";
+    if(a>=1e6)return sign+"$"+(a/1e6).toFixed(a/1e6>=10?0:1)+"M";
+    if(a>=1e3)return sign+"$"+(a/1e3).toFixed(a/1e3>=10?0:0)+"K";
+    return sign+"$"+Math.round(a).toLocaleString();
+  }
+  // fmtMoney rounds away decimals above ten units, which is right for the
+  // filer's own estimates and wrong for a published figure being quoted: it
+  // would print a cited $11,500,000 ceiling as "$12M" in the memo. Benchmark
+  // figures are reproduced exactly.
+  function fmtExact(v){
+    if(!isFinite(v))return "$0";
+    return (v<0?"-":"")+"$"+Math.round(Math.abs(v)).toLocaleString("en-US");
+  }
+  function fmtPct(v){
+    if(!isFinite(v))return "—";
+    if(v>=100)return ">100%";
+    if(v>=10)return v.toFixed(0)+"%";
+    if(v>=1)return v.toFixed(1)+"%";
+    return v.toFixed(2)+"%";
+  }
+
+  /* ---------------------------------------------------------------------------
+     The four-business-day clock. Item 1.05 runs from the date of the materiality
+     DETERMINATION, not the date of discovery — the single most misread part of
+     the rule. US federal holidays are observed because the SEC's EDGAR calendar
+     follows them.
+  --------------------------------------------------------------------------- */
+  function nthWeekdayOfMonth(year,month,weekday,n){
+    const d=new Date(Date.UTC(year,month,1));
+    let count=0;
+    while(true){
+      if(d.getUTCDay()===weekday){count++;if(count===n)return new Date(d);}
+      d.setUTCDate(d.getUTCDate()+1);
+      if(d.getUTCMonth()!==month)return null;
+    }
+  }
+  function lastWeekdayOfMonth(year,month,weekday){
+    const d=new Date(Date.UTC(year,month+1,0));
+    while(d.getUTCDay()!==weekday)d.setUTCDate(d.getUTCDate()-1);
+    return d;
+  }
+  function observed(d){
+    // A holiday on Saturday is observed the preceding Friday; on Sunday, the
+    // following Monday.
+    const o=new Date(d);
+    if(o.getUTCDay()===6)o.setUTCDate(o.getUTCDate()-1);
+    else if(o.getUTCDay()===0)o.setUTCDate(o.getUTCDate()+1);
+    return o;
+  }
+  function federalHolidays(year){
+    const fixed=[[0,1],[5,19],[6,4],[10,11],[11,25]].map(([m,day])=>observed(new Date(Date.UTC(year,m,day))));
+    const floating=[
+      nthWeekdayOfMonth(year,0,1,3),   // MLK Jr Day — 3rd Monday in January
+      nthWeekdayOfMonth(year,1,1,3),   // Washington's Birthday — 3rd Monday in February
+      lastWeekdayOfMonth(year,4,1),    // Memorial Day — last Monday in May
+      nthWeekdayOfMonth(year,8,1,1),   // Labor Day — 1st Monday in September
+      nthWeekdayOfMonth(year,9,1,2),   // Columbus Day — 2nd Monday in October
+      nthWeekdayOfMonth(year,10,4,4)   // Thanksgiving — 4th Thursday in November
+    ].filter(Boolean);
+    return new Set(fixed.concat(floating).map(d=>d.toISOString().slice(0,10)));
+  }
+  const holidayCache={};
+  function isBusinessDay(d){
+    const dow=d.getUTCDay();
+    if(dow===0||dow===6)return false;
+    const y=d.getUTCFullYear();
+    if(!holidayCache[y])holidayCache[y]=federalHolidays(y);
+    return !holidayCache[y].has(d.toISOString().slice(0,10));
+  }
+  function addBusinessDays(startISO,n){
+    if(!startISO)return null;
+    const parts=startISO.split("-").map(Number);
+    if(parts.length!==3||parts.some(isNaN))return null;
+    const d=new Date(Date.UTC(parts[0],parts[1]-1,parts[2]));
+    if(isNaN(d.getTime()))return null;
+    let added=0;
+    while(added<n){
+      d.setUTCDate(d.getUTCDate()+1);
+      if(isBusinessDay(d))added++;
+    }
+    return d;
+  }
+  function fmtDate(d){
+    if(!d)return "—";
+    return d.toLocaleDateString("en-US",{weekday:"long",year:"numeric",month:"long",day:"numeric",timeZone:"UTC"});
+  }
+
+  /* ---------------------------------------------------------------------------
+     Qualitative factors. Quantitative smallness does not settle materiality —
+     SAB No. 99 is explicit that a small number can still be material once the
+     total mix is considered. These nine are the ones that actually move a
+     determination in a cyber incident.
+  --------------------------------------------------------------------------- */
+  const FACTORS=[
+    {id:"data",label:"Sensitivity of data involved",
+     help:"Regulated or special-category data — health, biometric, children's, government, or authentication secrets — raises materiality independently of loss size."},
+    {id:"ops",label:"Operational disruption",
+     help:"Degradation of the product or service customers actually buy, or of the systems that produce financial reporting."},
+    {id:"customers",label:"Customer and contractual impact",
+     help:"Notification obligations, SLA credits, churn risk, and whether major customers can walk."},
+    {id:"legal",label:"Litigation and regulatory exposure",
+     help:"Class action likelihood, sectoral regulators, state AGs, and non-US authorities with their own clocks."},
+    {id:"reputation",label:"Reputational harm",
+     help:"Whether the incident undercuts the specific trust the business is sold on. A security vendor breach is not the same as a retailer breach."},
+    {id:"icfr",label:"Impact on internal control over financial reporting",
+     help:"If the incident touches ICFR or the systems it depends on, it can become a control deficiency question as well as a disclosure question."},
+    {id:"strategic",label:"Loss of strategic or competitive information",
+     help:"Source code, roadmaps, deal data, or trade secrets that change what a competitor knows."},
+    {id:"management",label:"Concealment or management conduct",
+     help:"Any indication of delay, suppression, or misstatement. This factor alone has driven enforcement outcomes."},
+    {id:"trend",label:"Masks a trend or pattern",
+     help:"A repeat of a previously disclosed weakness reads very differently from a first occurrence."}
+  ];
+  const LEVELS=[
+    {v:0,label:"None",short:"—"},
+    {v:1,label:"Limited",short:"Limited"},
+    {v:2,label:"Moderate",short:"Moderate"},
+    {v:3,label:"Significant",short:"Significant"}
+  ];
+
+  const cardStyle=(pad)=>({
+    background:C.bgCard,border:"1px solid "+C.border,borderRadius:16,
+    boxShadow:"0 10px 26px rgba(58,51,54,0.06)",padding:pad||"20px 24px"
+  });
+  const eyebrow={fontFamily:ui,fontSize:11,fontWeight:600,letterSpacing:"0.14em",textTransform:"uppercase"};
+  const labelStyle={fontFamily:ui,fontSize:11,fontWeight:600,letterSpacing:"0.08em",textTransform:"uppercase",color:C.textDim,display:"block",marginBottom:6};
+
+  function SLabel({label,color}){
+    return h('div',{style:{display:"flex",alignItems:"center",marginBottom:18}},
+      h('div',{style:Object.assign({},eyebrow,{fontSize:12,color:color||C.accent})},label));
+  }
+
+  function Field({label,value,onChange,placeholder,type,help}){
+    return h('div',{style:{marginBottom:14}},
+      h('label',{style:labelStyle},label),
+      h('input',{type:type||"text",value,placeholder:placeholder||"",
+        onChange:e=>onChange(e.target.value),
+        "aria-label":label}),
+      help?h('div',{style:{fontFamily:ui,fontSize:12,color:C.textDim,marginTop:5,lineHeight:1.5}},help):null);
+  }
+
+  /* --------------------------------------------------------------------------- */
+  // The portfolio risk lab renders this page in an iframe and carries the lesson
+  // copy in its own header, so the lesson act is skipped when we are embedded.
+  const EMBEDDED=(function(){try{return window.self!==window.top;}catch(e){return true;}})();
+
+  // Served from the risk-benchmarks Pages site with Access-Control-Allow-Origin: *.
+  const BENCHMARKS_URL="./risk-benchmarks.json";
+
+  // Where an entered figure falls against the published range. Deliberately
+  // coarse: the point is "is this in the right region", not a false precision.
+  function positionAgainst(v,t){
+    if(!(v>0))return"not entered";
+    if(v<t.min)return"below the benchmark floor";
+    if(v<t.likely)return"between the floor and the central estimate";
+    if(v<t.max)return"between the central estimate and the ceiling";
+    return"above the benchmark ceiling";
+  }
+
+  function BenchmarkCrossCheck({benchmarks,error,selected,onSelect,nums,isMobile:mb}){
+    const wrap={marginTop:16,paddingTop:16,borderTop:"1px solid "+C.borderSoft};
+    const lbl={fontFamily:ui,fontSize:10,fontWeight:600,letterSpacing:"0.09em",
+      textTransform:"uppercase",color:C.textDim,marginBottom:6};
+
+    if(error)return h('div',{style:wrap},
+      h('div',{style:{fontFamily:ui,fontSize:12.5,color:C.textDim,lineHeight:1.6}},
+        "Benchmark cross-check unavailable (",error,"). The determination does not depend on it."));
+
+    const bm=benchmarks.find(b=>b.id===selected);
+    return h('div',{style:wrap},
+      h('div',{style:lbl},"Benchmark cross-check (optional)"),
+      h('div',{style:{fontFamily:ui,fontSize:12.5,lineHeight:1.6,color:C.textDim,marginBottom:10}},
+        "Compare the figures above against a published loss range for a comparable population. It does not change the determination and it does not fill anything in \u2014 it gives the memo a sourced reference point, and a reviewer a reason to ask why your estimate sits where it does. Only USD-denominated shards are offered, because a determination reported in dollars should not quietly borrow a figure in another currency."),
+      h('select',{value:selected,onChange:e=>onSelect(e.target.value),
+        style:{fontFamily:ui,fontSize:mb?14:13,background:C.bg,color:C.text,
+          border:"1px solid "+C.border,borderRadius:8,padding:"9px 10px",width:"100%",outline:"none"}},
+        h('option',{value:""},benchmarks.length?"No cross-check":"Loading\u2026"),
+        ...benchmarks.map(b=>h('option',{key:b.id,value:b.id},b.scope))),
+
+      bm&&h('div',{style:{marginTop:12}},
+        h('div',{style:{fontFamily:ui,fontSize:11,color:C.textDim,marginBottom:8}},
+          bm.maturity.benchmark_status.replace(/_/g," ")," · ",
+          bm.provenance_tier.replace(/_/g," ")," · ",
+          (function(){const s=bm.confidence_summary||{};
+            return ["low","medium","high","unstated"].filter(k=>s[k]).map(k=>s[k]+" "+k).join(", ")||"confidence unstated";})(),
+          " confidence"),
+        h('div',{style:{display:"grid",gridTemplateColumns:mb?"1fr":"1fr 1fr 1fr",gap:10,marginBottom:10}},
+          [["Benchmark floor",fmtExact(bm.impact.min)],
+           ["Central estimate",fmtExact(bm.impact.likely)],
+           ["Benchmark ceiling",fmtExact(bm.impact.max)]].map(([l,v])=>
+            h('div',{key:l,style:{background:C.bg,border:"1px solid "+C.border,borderRadius:10,padding:"10px 12px"}},
+              h('div',{style:{fontFamily:ui,fontSize:9.5,fontWeight:600,letterSpacing:"0.08em",
+                textTransform:"uppercase",color:C.textDim,marginBottom:4}},l),
+              h('div',{style:{fontFamily:display,fontSize:mb?17:19,fontWeight:700,color:C.text,lineHeight:1.1}},v)))),
+        h('div',{style:{fontFamily:ui,fontSize:12.5,lineHeight:1.7,color:C.textMuted,marginBottom:10}},
+          "Entered P50 (",fmtMoney(nums.p50),") sits ",
+          h('strong',{style:{color:C.text}},positionAgainst(nums.p50,bm.impact)),
+          ". Entered P90 (",fmtMoney(nums.p90),") sits ",
+          h('strong',{style:{color:C.text}},positionAgainst(nums.p90,bm.impact)),"."),
+        h('div',{style:{background:C.amberSoft,borderLeft:"3px solid "+C.amber,borderRadius:6,
+          padding:"9px 12px",fontFamily:ui,fontSize:12,lineHeight:1.6,color:C.textMuted,marginBottom:10}},
+          h('strong',{style:{color:C.amber}},"This is corroboration for a class, not evidence about your incident. "),
+          "The benchmark describes a comparable population; a determination rests on the facts of this event. Shard limitation: ",
+          // The upstream text carries its own full stop; normalise so it ends
+          // with exactly one. Absent is reported as missing, not as "none" --
+          // a memo should not imply a caveat was considered and found unnecessary.
+          bm.not_good_for
+            ? bm.not_good_for.replace(/\.?$/,".")
+            : "no practitioner statement exists upstream for this shard, which is a gap in the record rather than an absence of limits."),
+        h('details',null,
+          h('summary',{style:{cursor:"pointer",fontFamily:ui,fontSize:12,color:C.textMuted}},
+            "Sources behind this range ("+Object.keys(bm.provenance).length+")"),
+          h('ul',{style:{margin:"10px 0 0 18px"}},
+            ...Object.entries(bm.provenance).map(([param,p])=>
+              h('li',{key:param,style:{fontFamily:ui,fontSize:11.5,color:C.textDim,lineHeight:1.55,marginBottom:8}},
+                param," \u2014 ",
+                p.url?h('a',{href:p.url,target:"_blank",rel:"noopener",style:{color:C.accent}},p.source_name)
+                     :(p.source_name||"unattributed"),
+                p.confidence?" \u00b7 "+p.confidence+" confidence":"",
+                p.limitations?h('div',{style:{fontSize:11,marginTop:2}},p.limitations):null))))));
+  }
+
+  function App(){
+    const mb=useIsMobile();
+
+    const [company,setCompany]=useState("");
+    const [pretax,setPretax]=useState("120M");
+    const [revenue,setRevenue]=useState("900M");
+    const [incident,setIncident]=useState("");
+    const [discovered,setDiscovered]=useState("");
+    const [determined,setDetermined]=useState("");
+
+    const [direct,setDirect]=useState("2.5M");
+    const [response,setResponse]=useState("1.8M");
+    const [revLoss,setRevLoss]=useState("3M");
+    const [legal,setLegal]=useState("4M");
+    const [p90mult,setP90mult]=useState(2.5);
+
+    const [scores,setScores]=useState(()=>{
+      const s={};FACTORS.forEach(f=>{s[f.id]=0;});
+      return Object.assign(s,{data:2,ops:1,customers:2,legal:2,reputation:2});
+    });
+    const setScore=useCallback((id,v)=>setScores(p=>Object.assign({},p,{[id]:v})),[]);
+
+    const [override,setOverride]=useState("auto"); // auto | material | not-material
+
+    const [benchmarks,setBenchmarks]=useState([]);
+    const [bmError,setBmError]=useState(null);
+    const [selectedBm,setSelectedBm]=useState("");
+
+    useEffect(()=>{
+      let live=true;
+      fetch(BENCHMARKS_URL)
+        .then(r=>{if(!r.ok)throw new Error("HTTP "+r.status);return r.json();})
+        // An Item 1.05 determination is reported in dollars. Offering a shard
+        // priced in another currency would invite a comparison against a figure
+        // that has silently changed units.
+        .then(d=>{if(live)setBenchmarks((d.benchmarks||[]).filter(b=>b.currency==="USD"));})
+        .catch(e=>{if(live)setBmError(e.message);});
+      return()=>{live=false;};
+    },[]);
+
+    const nums=useMemo(()=>{
+      const pt=parseMoney(pretax),rev=parseMoney(revenue);
+      const p50=parseMoney(direct)+parseMoney(response)+parseMoney(revLoss)+parseMoney(legal);
+      const p90=p50*p90mult;
+      // The 5%-of-pre-tax-income rule of thumb is the starting screen SAB 99
+      // describes, not a safe harbour. Revenue is carried alongside it because
+      // pre-tax income is a poor anchor for a company near break-even.
+      const thrPretax=pt*0.05;
+      const thrRevenue=rev*0.005;
+      return{
+        pt,rev,p50,p90,thrPretax,thrRevenue,
+        pctPretaxP50:pt>0?(p50/pt)*100:NaN,
+        pctPretaxP90:pt>0?(p90/pt)*100:NaN,
+        pctRevP50:rev>0?(p50/rev)*100:NaN,
+        crossesP50:p50>=thrPretax&&thrPretax>0,
+        crossesP90:p90>=thrPretax&&thrPretax>0
+      };
+    },[pretax,revenue,direct,response,revLoss,legal,p90mult]);
+
+    const qual=useMemo(()=>{
+      const total=FACTORS.reduce((a,f)=>a+(scores[f.id]||0),0);
+      const max=FACTORS.length*3;
+      const significant=FACTORS.filter(f=>scores[f.id]===3);
+      const moderate=FACTORS.filter(f=>scores[f.id]===2);
+      return{total,max,pct:(total/max)*100,significant,moderate};
+    },[scores]);
+
+    // A determination is not an average of two scores. Either leg can carry it:
+    // crossing a quantitative threshold is sufficient, and so is a single
+    // significant qualitative factor. That asymmetry is the point of SAB 99.
+    const verdict=useMemo(()=>{
+      if(override==="material")return{call:"material",basis:"Manual determination recorded by the filer."};
+      if(override==="not-material")return{call:"not-material",basis:"Manual determination recorded by the filer."};
+      if(nums.crossesP50)return{call:"material",basis:"Expected loss exceeds the quantitative screen on its own."};
+      if(qual.significant.length>0)return{call:"material",basis:"At least one qualitative factor is rated significant, which can carry materiality regardless of loss size."};
+      if(nums.crossesP90&&qual.total>=6)return{call:"presumed-material",basis:"A reasonably likely downside crosses the screen and the qualitative mix is substantive."};
+      if(qual.total>=10)return{call:"presumed-material",basis:"No single factor dominates, but the accumulated qualitative mix is substantive."};
+      if(nums.crossesP90||qual.moderate.length>0)return{call:"close",basis:"Neither leg is decisive. This is the case that needs documented judgment, not a formula."};
+      return{call:"not-material",basis:"Neither the quantitative screen nor the qualitative mix is approached on the facts as entered."};
+    },[override,nums,qual]);
+
+    const VERDICT_STYLE={
+      "material":{bg:C.accentSoft,fg:C.accent,line:C.accent,title:"Material",
+        blurb:"File Item 1.05 within four business days of the determination date."},
+      "presumed-material":{bg:C.accentSoft,fg:C.accent,line:C.accent2,title:"Presumed material",
+        blurb:"Treat as material unless disclosure counsel documents a specific basis to conclude otherwise."},
+      "close":{bg:C.amberSoft,fg:C.amber,line:C.amber,title:"Too close to call on the numbers alone",
+        blurb:"Escalate to disclosure counsel. Record the reasoning contemporaneously — the memo is the deliverable, not the verdict."},
+      "not-material":{bg:C.sageSoft,fg:C.sage,line:C.sage,title:"Not material on these facts",
+        blurb:"Document the basis and re-run the determination if the facts change. Item 1.05 obligations can attach later."}
+    };
+    const vs=VERDICT_STYLE[verdict.call];
+
+    const deadline=useMemo(()=>addBusinessDays(determined,4),[determined]);
+    const delay=useMemo(()=>{
+      if(!discovered||!determined)return null;
+      const a=new Date(discovered+"T00:00:00Z"),b=new Date(determined+"T00:00:00Z");
+      if(isNaN(a)||isNaN(b))return null;
+      return Math.round((b-a)/86400000);
+    },[discovered,determined]);
+
+    const memo=useMemo(()=>{
+      const L=[];
+      L.push("MATERIALITY DETERMINATION — CYBERSECURITY INCIDENT");
+      L.push("");
+      L.push("Registrant: "+(company||"[registrant]"));
+      L.push("Incident: "+(incident||"[incident reference]"));
+      L.push("Date discovered: "+(discovered||"[date]"));
+      L.push("Date of determination: "+(determined||"[date]"));
+      if(delay!==null)L.push("Elapsed discovery to determination: "+delay+" calendar day"+(delay===1?"":"s"));
+      L.push("");
+      L.push("1. QUANTITATIVE ASSESSMENT");
+      L.push("   Expected (P50) loss exposure: "+fmtMoney(nums.p50));
+      L.push("   Reasonably likely downside (P90): "+fmtMoney(nums.p90));
+      L.push("   Pre-tax income: "+fmtMoney(nums.pt)+"  |  Revenue: "+fmtMoney(nums.rev));
+      L.push("   P50 as % of pre-tax income: "+fmtPct(nums.pctPretaxP50));
+      L.push("   P90 as % of pre-tax income: "+fmtPct(nums.pctPretaxP90));
+      L.push("   5% of pre-tax income screen: "+fmtMoney(nums.thrPretax)+
+             " — "+(nums.crossesP50?"CROSSED at P50":(nums.crossesP90?"crossed only at P90":"not crossed")));
+      const bm=benchmarks.find(b=>b.id===selectedBm);
+      if(bm){
+        L.push("");
+        L.push("   Benchmark cross-check: "+bm.title);
+        L.push("     Published per-event loss: "+fmtExact(bm.impact.min)+" / "+fmtExact(bm.impact.likely)+
+               " / "+fmtExact(bm.impact.max)+" (floor / central / ceiling), "+bm.currency);
+        L.push("     Shard status: "+bm.maturity.benchmark_status.replace(/_/g," ")+
+               "; "+Object.keys(bm.provenance).length+" parameters, each traced to a named public source.");
+        L.push("     Entered P50 sits "+positionAgainst(nums.p50,bm.impact)+".");
+        L.push("     Entered P90 sits "+positionAgainst(nums.p90,bm.impact)+".");
+        L.push("     This is corroboration for a comparable population, not evidence about this");
+        L.push("     incident. Shard limitation: "+(bm.not_good_for
+          ||"no practitioner statement exists upstream for this shard; this is a gap in the record, not an absence of limits"));
+        L.push("     Data: https://github.com/RootCawsLLC/risk-benchmarks");
+      }
+      L.push("");
+      L.push("2. QUALITATIVE ASSESSMENT (total mix)");
+      FACTORS.forEach(f=>{
+        const lv=LEVELS[scores[f.id]||0];
+        L.push("   ["+(lv.v>0?lv.label:"none").padEnd(11)+"] "+f.label);
+      });
+      L.push("   Aggregate qualitative weight: "+qual.total+" of "+qual.max);
+      L.push("");
+      L.push("3. DETERMINATION");
+      L.push("   "+vs.title.toUpperCase());
+      L.push("   Basis: "+verdict.basis);
+      L.push("");
+      if(verdict.call==="material"||verdict.call==="presumed-material"){
+        L.push("4. DISCLOSURE OBLIGATION");
+        L.push("   Item 1.05 of Form 8-K is triggered by the determination, not by discovery.");
+        L.push("   Four business days from "+(determined||"[determination date]")+" is "+
+               (deadline?deadline.toISOString().slice(0,10):"[deadline]")+".");
+        L.push("   Federal holidays are excluded from the count.");
+        L.push("");
+      }
+      L.push("Prepared by: ____________________   Reviewed by disclosure counsel: ____________________");
+      L.push("");
+      L.push("This memorandum records a judgment made on the facts known at the time. It is not");
+      L.push("legal advice, and it does not substitute for review by securities counsel.");
+      return L.join("\n");
+    },[company,incident,discovered,determined,delay,nums,scores,qual,verdict,vs,deadline,benchmarks,selectedBm]);
+
+    const [copied,setCopied]=useState(false);
+    const copyMemo=useCallback(()=>{
+      const done=()=>{setCopied(true);setTimeout(()=>setCopied(false),2200);};
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(memo).then(done).catch(()=>{});
+      }else{
+        const ta=document.createElement("textarea");
+        ta.value=memo;document.body.appendChild(ta);ta.select();
+        try{document.execCommand("copy");done();}catch(e){}
+        document.body.removeChild(ta);
+      }
+    },[memo]);
+
+    const pd=mb?16:24;
+    const prose={fontFamily:ui,fontSize:mb?15:16,lineHeight:1.75,color:C.textMuted};
+    const wrap={maxWidth:1000,margin:"0 auto",
+      padding:EMBEDDED?(mb?"4px 16px 64px":"8px 24px 96px"):(mb?"28px 16px 64px":"48px 24px 96px")};
+
+    return h('div',{style:wrap},
+
+      /* ---------------- THE LESSON ---------------- */
+      !EMBEDDED&&h('div',{style:{marginBottom:mb?32:44}},
+        h('div',{style:Object.assign({},eyebrow,{color:C.amber,marginBottom:12})},"The lesson"),
+        h('h1',{style:{fontFamily:display,fontSize:mb?32:44,fontWeight:700,lineHeight:1.12,marginBottom:18,color:C.text}},
+          "Materiality is a ",h('em',{style:{fontStyle:"italic",color:C.accent}},"judgment"),", and the memo is the deliverable"),
+        h('p',{style:Object.assign({},prose,{marginBottom:14})},
+          "SEC Item 1.05 of Form 8-K gives you four business days to disclose a material cybersecurity incident. The clock does not start when you discover the incident — it starts when you ",
+          h('strong',{style:{color:C.text}},"determine that it is material"),
+          ", and that determination has to be made without unreasonable delay. Those are two different dates, and confusing them is the most common way this rule is misread."),
+        h('p',{style:Object.assign({},prose,{marginBottom:14})},
+          "There is no dollar threshold in the rule. Materiality still runs on the standard the Supreme Court set out in ",
+          h('em',null,"TSC Industries"), " and ", h('em',null,"Basic"),
+          ": would a reasonable investor consider it important, given the total mix of information? SAB No. 99 then makes the harder point — a quantitatively small number can still be material once qualitative factors are weighed. You cannot compute your way out of the judgment."),
+        h('p',{style:prose},
+          "So this tool does not return a score. It works both legs of the analysis, shows you which one is carrying the conclusion, and drafts the contemporaneous memo that is the thing you will actually be asked for later.")),
+
+      /* ---------------- THE TOOL ---------------- */
+      h('div',{style:Object.assign({},eyebrow,{color:C.accent,marginBottom:16})},"The tool"),
+
+      h('div',{style:Object.assign({},cardStyle(pd),{marginBottom:18})},
+        SLabel({label:"Step 1: The incident and the two dates"}),
+        h('div',{style:{display:"grid",gridTemplateColumns:mb?"1fr":"1fr 1fr",gap:mb?0:18}},
+          Field({label:"Registrant",value:company,onChange:setCompany,placeholder:"Acme Corp"}),
+          Field({label:"Incident reference",value:incident,onChange:setIncident,placeholder:"INC-2026-0142"})),
+        h('div',{style:{display:"grid",gridTemplateColumns:mb?"1fr":"1fr 1fr",gap:mb?0:18}},
+          Field({label:"Date discovered",value:discovered,onChange:setDiscovered,type:"date"}),
+          Field({label:"Date of materiality determination",value:determined,onChange:setDetermined,type:"date",
+            help:"This is the date the four-business-day clock runs from."})),
+        delay!==null?h('div',{style:{
+            fontFamily:ui,fontSize:13,lineHeight:1.6,padding:"10px 14px",borderRadius:10,marginTop:4,
+            background:delay>14?C.amberSoft:C.sageSoft,
+            color:delay>14?C.amber:C.sage,
+            border:"1px solid "+(delay>14?C.amber:C.sage)+"33"}},
+          delay<0
+            ? "The determination date precedes discovery. Check the dates."
+            : delay+" calendar day"+(delay===1?"":"s")+" from discovery to determination. "+
+              (delay>14
+                ? "A gap this long invites the question of whether the determination was made without unreasonable delay. Make sure the file explains what was being established during that period."
+                : "Document what work happened in that window; the reasonableness of the gap is itself reviewable.")
+        ):null),
+
+      h('div',{style:Object.assign({},cardStyle(pd),{marginBottom:18})},
+        SLabel({label:"Step 2: Quantitative — the screen, not the answer"}),
+        h('div',{style:{display:"grid",gridTemplateColumns:mb?"1fr":"1fr 1fr",gap:mb?0:18}},
+          Field({label:"Annual pre-tax income",value:pretax,onChange:setPretax,placeholder:"120M",
+            help:"Accepts shorthand: 500K, 1.2M, 3B."}),
+          Field({label:"Annual revenue",value:revenue,onChange:setRevenue,placeholder:"900M"})),
+        h('div',{style:{height:1,background:C.borderSoft,margin:"6px 0 18px"}}),
+        h('div',{style:{display:"grid",gridTemplateColumns:mb?"1fr 1fr":"1fr 1fr 1fr 1fr",gap:mb?12:14}},
+          Field({label:"Direct loss",value:direct,onChange:setDirect,placeholder:"2.5M"}),
+          Field({label:"Response & remediation",value:response,onChange:setResponse,placeholder:"1.8M"}),
+          Field({label:"Revenue impact",value:revLoss,onChange:setRevLoss,placeholder:"3M"}),
+          Field({label:"Legal & regulatory",value:legal,onChange:setLegal,placeholder:"4M"})),
+        h('div',{style:{marginTop:8}},
+          h('label',{style:labelStyle},"Reasonably likely downside (P90) multiplier — "+p90mult.toFixed(1)+"×"),
+          h('input',{type:"range",min:1,max:6,step:0.1,value:p90mult,
+            onChange:e=>setP90mult(parseFloat(e.target.value)),
+            "aria-label":"P90 multiplier"}),
+          h('div',{style:{fontFamily:ui,fontSize:12,color:C.textDim,marginTop:6,lineHeight:1.5}},
+            "Item 1.05 reaches impact that is ",h('em',null,"reasonably likely"),", not only impact already realised. The P90 is what that phrase looks like in numbers.")),
+
+        h('div',{style:{display:"grid",gridTemplateColumns:mb?"1fr":"1fr 1fr 1fr",gap:12,marginTop:20}},
+          [["Expected loss (P50)",fmtMoney(nums.p50),fmtPct(nums.pctPretaxP50)+" of pre-tax income",C.text],
+           ["Reasonably likely (P90)",fmtMoney(nums.p90),fmtPct(nums.pctPretaxP90)+" of pre-tax income",C.accent],
+           ["5% pre-tax screen",fmtMoney(nums.thrPretax),
+            nums.crossesP50?"Crossed at P50":(nums.crossesP90?"Crossed at P90 only":"Not crossed"),
+            nums.crossesP50?C.accent:(nums.crossesP90?C.amber:C.sage)]
+          ].map(([lbl,big,sub,col])=>h('div',{key:lbl,style:{
+              background:C.bg,border:"1px solid "+C.border,borderRadius:12,padding:"14px 16px"}},
+            h('div',{style:{fontFamily:ui,fontSize:10,fontWeight:600,letterSpacing:"0.09em",textTransform:"uppercase",color:C.textDim,marginBottom:6}},lbl),
+            h('div',{style:{fontFamily:display,fontSize:mb?22:26,fontWeight:700,color:col,lineHeight:1.1}},big),
+            h('div',{style:{fontFamily:ui,fontSize:12,color:C.textDim,marginTop:4}},sub)))),
+
+        h('div',{style:{fontFamily:ui,fontSize:12.5,lineHeight:1.6,color:C.textDim,marginTop:14,paddingTop:14,borderTop:"1px solid "+C.borderSoft}},
+          "The 5%-of-pre-tax-income figure is the rule of thumb SAB No. 99 describes as a starting point for analysis — and then explicitly declines to bless as a safe harbour. Near break-even it becomes meaningless, which is why revenue is shown next to it. At the entered figures, 0.5% of revenue would be ",
+          h('strong',{style:{color:C.textMuted}},fmtMoney(nums.thrRevenue)),"."),
+
+        BenchmarkCrossCheck({benchmarks,error:bmError,selected:selectedBm,
+          onSelect:setSelectedBm,nums,isMobile:mb})),
+
+      h('div',{style:Object.assign({},cardStyle(pd),{marginBottom:18})},
+        SLabel({label:"Step 3: Qualitative — the total mix"}),
+        h('p',{style:{fontFamily:ui,fontSize:13.5,lineHeight:1.65,color:C.textDim,marginBottom:18}},
+          "Rate each factor on the facts you have. A single ",h('strong',{style:{color:C.accent}},"significant"),
+          " rating is enough to carry materiality on its own, no matter how small the dollar figure is."),
+        FACTORS.map(f=>h('div',{key:f.id,style:{
+            padding:"12px 0",borderTop:"1px solid "+C.borderSoft,
+            display:mb?"block":"grid",gridTemplateColumns:"1fr auto",gap:16,alignItems:"start"}},
+          h('div',null,
+            h('div',{style:{fontFamily:ui,fontSize:14,fontWeight:600,color:C.text,marginBottom:3}},f.label),
+            h('div',{style:{fontFamily:ui,fontSize:12.5,lineHeight:1.55,color:C.textDim}},f.help)),
+          h('div',{style:{display:"flex",gap:6,marginTop:mb?10:0,flexShrink:0}},
+            LEVELS.map(lv=>{
+              const on=(scores[f.id]||0)===lv.v;
+              const col=lv.v===3?C.accent:lv.v===2?C.amber:lv.v===1?C.sage:C.textDim;
+              return h('button',{key:lv.v,onClick:()=>setScore(f.id,lv.v),
+                "aria-pressed":on,
+                style:{
+                  fontFamily:ui,fontSize:11.5,fontWeight:600,cursor:"pointer",
+                  padding:"6px 11px",borderRadius:999,whiteSpace:"nowrap",
+                  border:"1px solid "+(on?col:C.border),
+                  background:on?col:C.bgCard,
+                  color:on?"#fff":C.textDim}},lv.label);
+            })))),
+        h('div',{style:{marginTop:16,paddingTop:14,borderTop:"1px solid "+C.border,
+            fontFamily:ui,fontSize:13,color:C.textMuted}},
+          "Aggregate qualitative weight: ",
+          h('strong',{style:{color:C.text}},qual.total+" of "+qual.max),
+          qual.significant.length>0
+            ? h('span',{style:{color:C.accent}}," — "+qual.significant.length+" factor"+(qual.significant.length===1?"":"s")+" rated significant")
+            : null)),
+
+      /* ---------------- DETERMINATION ---------------- */
+      h('div',{style:{
+          background:vs.bg,border:"1px solid "+vs.line+"55",borderLeft:"4px solid "+vs.line,
+          borderRadius:14,padding:pd,marginBottom:18}},
+        h('div',{style:Object.assign({},eyebrow,{color:vs.fg,marginBottom:10})},"Determination"),
+        h('div',{style:{fontFamily:display,fontSize:mb?24:30,fontWeight:700,color:vs.fg,lineHeight:1.15,marginBottom:10}},vs.title),
+        h('p',{style:{fontFamily:ui,fontSize:14.5,lineHeight:1.65,color:C.textMuted,marginBottom:8}},verdict.basis),
+        h('p',{style:{fontFamily:ui,fontSize:14.5,lineHeight:1.65,color:C.textMuted}},vs.blurb),
+
+        (verdict.call==="material"||verdict.call==="presumed-material")&&determined
+          ? h('div',{style:{marginTop:16,padding:"14px 16px",background:C.bgCard,
+              border:"1px solid "+C.border,borderRadius:12}},
+              h('div',{style:{fontFamily:ui,fontSize:10,fontWeight:600,letterSpacing:"0.09em",textTransform:"uppercase",color:C.textDim,marginBottom:6}},"Item 1.05 filing deadline"),
+              h('div',{style:{fontFamily:display,fontSize:mb?18:21,fontWeight:700,color:C.accent,lineHeight:1.25}},fmtDate(deadline)),
+              h('div',{style:{fontFamily:ui,fontSize:12.5,color:C.textDim,marginTop:6,lineHeight:1.55}},
+                "Four business days from the determination date, excluding weekends and US federal holidays."))
+          : null,
+
+        h('div',{style:{marginTop:16,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}},
+          h('span',{style:{fontFamily:ui,fontSize:11.5,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",color:C.textDim,marginRight:4}},"Override"),
+          [["auto","Follow the analysis"],["material","Record as material"],["not-material","Record as not material"]]
+            .map(([v,lbl])=>h('button',{key:v,onClick:()=>setOverride(v),
+              "aria-pressed":override===v,
+              style:{fontFamily:ui,fontSize:11.5,fontWeight:600,cursor:"pointer",
+                padding:"6px 12px",borderRadius:999,
+                border:"1px solid "+(override===v?C.text:C.border),
+                background:override===v?C.text:"transparent",
+                color:override===v?"#fff":C.textDim}},lbl)))),
+
+      /* ---------------- MEMO ---------------- */
+      h('div',{style:Object.assign({},cardStyle(pd),{marginBottom:32})},
+        h('div',{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}},
+          h('div',{style:Object.assign({},eyebrow,{fontSize:12,color:C.accent})},"Step 4: The contemporaneous memo"),
+          h('button',{onClick:copyMemo,className:"no-print",
+            style:{fontFamily:ui,fontSize:12.5,fontWeight:600,cursor:"pointer",
+              padding:"8px 16px",borderRadius:999,border:"1px solid "+C.accent,
+              background:copied?C.accent:"transparent",color:copied?"#fff":C.accent}},
+            copied?"Copied":"Copy memo")),
+        h('pre',{style:{
+            fontFamily:"ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+            fontSize:mb?11:12.5,lineHeight:1.65,color:C.textMuted,
+            background:C.bg,border:"1px solid "+C.border,borderRadius:12,
+            padding:mb?12:18,overflowX:"auto",whiteSpace:"pre-wrap",wordBreak:"break-word"}},memo)),
+
+      /* ---------------- THE TAKEAWAY ---------------- */
+      h('div',null,
+        h('div',{style:Object.assign({},eyebrow,{color:C.sage,marginBottom:12})},"The takeaway"),
+        h('p',{style:Object.assign({},prose,{marginBottom:14})},
+          "The output that matters here is not the verdict — it is the record. Enforcement in this area has turned far less on reaching the wrong conclusion than on being unable to show how the conclusion was reached, or on disclosure that described a hypothetical risk the company already knew had materialised."),
+        h('p',{style:Object.assign({},prose,{marginBottom:14})},
+          "Two habits follow from that. Write the memo at the time, not in reconstruction. And keep the quantitative and qualitative legs visibly separate, so a reviewer can see which one carried the call and test that leg specifically."),
+        h('p',{style:prose},
+          "Item 1.05 is also not the whole obligation. Item 106 of Regulation S-K covers the annual description of risk management, strategy, and governance, and a determination that an incident is not material today does not settle what happens when the facts develop.")),
+
+      h('div',{style:{marginTop:36,paddingTop:20,borderTop:"1px solid "+C.border,
+          fontFamily:ui,fontSize:12,lineHeight:1.65,color:C.textDim}},
+        h('strong',{style:{color:C.textMuted}},"This is an analysis aid, not legal advice."),
+        " It does not create an attorney–client relationship and it is not a substitute for review by securities counsel. Thresholds are configurable because no threshold in this area is authoritative. Nothing you type leaves your browser — there is no server, no storage, and no telemetry."));
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+  </script>
+</body>
+</html>
